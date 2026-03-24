@@ -11,12 +11,32 @@ Hall Seat Management System for university students and provosts. Built with **R
 - 📝 Apply for seat allocation with reason & supporting documents
 - 🔄 Request seat change (for current residents)
 - 📋 Track application status and provost feedback
+- 💳 Complete dummy payment within 24 hours to confirm seat
+- ✖ Cancel pending or unpaid applications
 
 ### Provost Dashboard
 - 📨 View all applications with **AI-generated summaries** and recommendation badges (Strong / Moderate / Weak)
-- ✅ Approve or ❌ Deny applications with feedback (auto seat assignment on approval)
+- ⭐ **Priority Score (1-10)** with factor breakdown: Distance, Financial, Medical, Academic, Documents
+- ✅ Approve or ❌ Deny applications with feedback
 - 🔄 Manage seat change requests
 - 🏠 View all hall residents — room, dining days, absence records
+
+### 🎫 Reservation Flow (Train-Ticket Style)
+
+```
+Student Applies → Provost Reviews (AI Score) → Approved
+     ↓
+Seat RESERVED (24hr countdown starts)
+     ↓
+Student Pays ৳500 → Seat ASSIGNED → Becomes Resident
+     OR
+24hrs expire → Seat RELEASED → Application EXPIRED
+     OR
+Student cancels → Seat RELEASED → Application CANCELLED
+```
+
+- **Residents cannot apply** for a new seat (must use Change Seat)
+- **Only one active application** allowed per student
 
 ---
 
@@ -30,6 +50,7 @@ Hall Seat Management System for university students and provosts. Built with **R
 | Auth | Session-based (express-session + connect-pg-simple) |
 | AI | Google Gemini API + rule-based fallback |
 | File Uploads | Multer |
+| Deployment | Docker + Render |
 
 ---
 
@@ -42,13 +63,9 @@ Hall Seat Management System for university students and provosts. Built with **R
 ### Install Node.js on Linux (Ubuntu/Debian)
 
 ```bash
-# Using NodeSource
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
-
-# Verify
-node -v
-npm -v
+node -v && npm -v
 ```
 
 ---
@@ -115,15 +132,10 @@ This will:
 ## Manual Setup (without shell scripts)
 
 ```bash
-# Install dependencies
 npm install
 cd server && npm install && cd ..
 cd client && npm install && cd ..
-
-# Run database migrations & seed data
 cd server && node src/migrate.js && cd ..
-
-# Start both servers (backend + frontend)
 npm run dev
 ```
 
@@ -135,56 +147,30 @@ npm run dev
 CSE-326_BIIS/
 ├── server/                     # Express backend
 │   ├── src/
-│   │   ├── index.js            # Server entry point (serves React in production)
+│   │   ├── index.js            # Server + expiry cleanup job
 │   │   ├── db.js               # PostgreSQL connection pool
-│   │   ├── migrate.js          # Schema creation + seed data
-│   │   ├── middleware/
-│   │   │   └── auth.js         # Session-based auth middleware
+│   │   ├── migrate.js          # Schema + seed data
+│   │   ├── middleware/auth.js  # Session auth middleware
 │   │   ├── routes/
 │   │   │   ├── auth.js         # Login, register, logout
-│   │   │   ├── seats.js        # Seat availability & filters
-│   │   │   ├── applications.js # Seat allocation requests
+│   │   │   ├── seats.js        # Seat availability
+│   │   │   ├── applications.js # Apply, pay, cancel, resident-check
 │   │   │   ├── seatChanges.js  # Seat change requests
-│   │   │   └── residents.js    # Hall resident management
-│   │   └── services/
-│   │       └── ai.js           # AI recommendation engine
-│   ├── uploads/                # Uploaded documents
-│   └── .env                    # Environment config (not committed)
+│   │   │   └── residents.js    # Hall residents
+│   │   └── services/ai.js     # Gemini AI scoring (5 factors, /10)
+│   └── .env.example
 ├── client/                     # Vite + React frontend
-│   ├── src/
-│   │   ├── App.jsx             # Router with protected routes
-│   │   ├── index.css           # BUET institutional theme
-│   │   ├── api.js              # Axios API client
-│   │   ├── context/
-│   │   │   └── AuthContext.jsx # Auth state management
-│   │   ├── components/         # Layout, Sidebar
-│   │   └── pages/
-│   │       ├── Login.jsx
-│   │       ├── Register.jsx
-│   │       ├── student/        # Student pages
-│   │       └── provost/        # Provost pages
-│   └── vite.config.js
-├── setup.sh                    # First-time setup script
-├── start.sh                    # Start dev servers
-├── package.json                # Root scripts
+│   └── src/
+│       ├── index.css           # BUET institutional theme
+│       ├── pages/
+│       │   ├── student/        # SeatAvailability, ApplySeat, MyApplications, ChangeSeat
+│       │   └── provost/        # Applications, Residents, SeatChanges
+│       └── components/         # Layout, Sidebar
+├── Dockerfile                  # Multi-stage Docker build
+├── render.yaml                 # Render Blueprint
+├── setup.sh / start.sh         # Dev scripts
 └── README.md
 ```
-
----
-
-## Deployment on Render
-
-1. Push your code to GitHub
-2. Create a new **Web Service** on [Render](https://render.com)
-3. Connect your GitHub repo
-4. Configure:
-   - **Build Command:** `npm run render-build`
-   - **Start Command:** `npm start`
-5. Set environment variables:
-   - `DATABASE_URL` — your PostgreSQL connection string
-   - `SESSION_SECRET` — a strong random string
-   - `NODE_ENV` = `production`
-   - `GEMINI_API_KEY` — (optional) for AI-powered summaries
 
 ---
 
@@ -202,10 +188,26 @@ CSE-326_BIIS/
 | POST | `/api/applications` | Submit seat application | Student |
 | GET | `/api/applications` | List applications | ✅ |
 | PATCH | `/api/applications/:id` | Approve/deny application | Provost |
+| POST | `/api/applications/:id/pay` | Complete dummy payment | Student |
+| POST | `/api/applications/:id/cancel` | Cancel application | Student |
+| GET | `/api/applications/resident-check` | Check if student is resident | Student |
 | POST | `/api/seat-changes` | Request seat change | Student |
 | GET | `/api/seat-changes` | List seat changes | ✅ |
 | PATCH | `/api/seat-changes/:id` | Approve/deny change | Provost |
 | GET | `/api/residents` | List hall residents | Provost |
+
+---
+
+## Deployment on Render
+
+1. Push code to GitHub
+2. Create a **Web Service** on [Render](https://render.com)
+3. Configure:
+   - **Runtime**: Docker
+   - **Dockerfile Path**: `./Dockerfile`
+4. Set environment variables:
+   - `DATABASE_URL`, `SESSION_SECRET`, `NODE_ENV=production`, `GEMINI_API_KEY` (optional)
+5. Deploy — migrations run automatically on startup
 
 ---
 

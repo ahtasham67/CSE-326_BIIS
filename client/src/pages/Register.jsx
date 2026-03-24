@@ -100,8 +100,17 @@ export default function Register() {
 
                   <div className="auth-card form-row">
                     <label htmlFor="department">Department :</label>
-                    <input id="department" type="text" value={form.department}
-                      onChange={e => updateField('department', e.target.value)} placeholder="e.g. CSE" />
+                    {/* <input id="department" type="text" value={form.department} */}
+                    <select id="department" value={form.department} onChange={e => updateField('department', e.target.value)}>
+                      <option value="">Select</option>
+                      <option value="CSE">CSE</option>
+                      <option value="EEE">EEE</option>
+                      <option value="ME">ME</option>
+                      <option value="IPE">IPE</option>
+                      <option value="BME">BME</option>
+                      <option value="CE">CE</option>
+                      <option value="NCE">NCE</option>
+                    </select>
                   </div>
 
                   <div className="auth-card form-row">

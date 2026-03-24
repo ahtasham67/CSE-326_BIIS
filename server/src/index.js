@@ -79,6 +79,41 @@ if (fs.existsSync(clientBuild)) {
   });
 }
 
+// Reservation expiry cleanup — runs every 5 minutes
+async function cleanupExpiredReservations() {
+  try {
+    // Find expired reservations
+    const expired = await pool.query(
+      `SELECT id, reserved_seat_id FROM applications 
+       WHERE status = 'approved' AND payment_status = 'pending' AND payment_deadline < NOW()`
+    );
+
+    for (const app of expired.rows) {
+      // Release reserved seat
+      if (app.reserved_seat_id) {
+        await pool.query(`UPDATE seats SET status = 'available' WHERE id = $1 AND status = 'reserved'`, [app.reserved_seat_id]);
+      }
+      // Mark application as expired
+      await pool.query(
+        `UPDATE applications SET status = 'expired', payment_status = 'expired', updated_at = NOW() WHERE id = $1`,
+        [app.id]
+      );
+      console.log(`⏰ Application ${app.id} expired — seat ${app.reserved_seat_id} released`);
+    }
+
+    if (expired.rows.length > 0) {
+      console.log(`🧹 Cleaned up ${expired.rows.length} expired reservation(s)`);
+    }
+  } catch (err) {
+    console.error('Cleanup error:', err.message);
+  }
+}
+
+// Run cleanup every 5 minutes
+setInterval(cleanupExpiredReservations, 5 * 60 * 1000);
+// Also run once on startup after 10 seconds
+setTimeout(cleanupExpiredReservations, 10000);
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 BIIS Server running on http://localhost:${PORT}`);
   console.log(`📁 Environment: ${process.env.NODE_ENV || 'development'}`);

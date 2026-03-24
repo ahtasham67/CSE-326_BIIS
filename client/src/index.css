@@ -582,6 +582,18 @@ tr:hover td { background: #f5f0e5; }
   border-color: #EF9A9A;
 }
 
+.badge-cancelled {
+  background: #F5F5F5;
+  color: #757575;
+  border-color: #BDBDBD;
+}
+
+.badge-expired {
+  background: #FFEBEE;
+  color: #B71C1C;
+  border-color: #EF9A9A;
+}
+
 /* ===== Filters ===== */
 .filters-bar {
   display: flex;

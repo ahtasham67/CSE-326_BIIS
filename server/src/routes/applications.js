@@ -45,13 +45,31 @@ router.post('/', requireAuth, upload.single('document'), async (req, res) => {
       return res.status(400).json({ error: 'Hall and reason are required' });
     }
 
-    // Check for existing pending application
-    const existing = await pool.query(
+    // Block if student is already a resident
+    const residentCheck = await pool.query(
+      'SELECT id FROM residents WHERE student_id = $1',
+      [req.session.user.id]
+    );
+    if (residentCheck.rows.length > 0) {
+      return res.status(409).json({ error: 'You are already a hall resident. You cannot apply for a new seat.' });
+    }
+
+    // Block if student has a pending application
+    const pendingCheck = await pool.query(
       `SELECT id FROM applications WHERE student_id = $1 AND status = 'pending'`,
       [req.session.user.id]
     );
-    if (existing.rows.length > 0) {
+    if (pendingCheck.rows.length > 0) {
       return res.status(409).json({ error: 'You already have a pending application' });
+    }
+
+    // Block if student has an approved application awaiting payment
+    const awaitingPayment = await pool.query(
+      `SELECT id FROM applications WHERE student_id = $1 AND status = 'approved' AND payment_status = 'pending'`,
+      [req.session.user.id]
+    );
+    if (awaitingPayment.rows.length > 0) {
+      return res.status(409).json({ error: 'You have an approved application awaiting payment. Please complete payment first.' });
     }
 
     const document_url = req.file ? `/uploads/${req.file.filename}` : null;
@@ -67,6 +85,8 @@ router.post('/', requireAuth, upload.single('document'), async (req, res) => {
 
     // Generate AI summary and recommendation
     const aiResult = await analyzeApplication(studentData);
+    console.log(aiResult);
+    console.log(studentData);
     const { summary, recommendation, score, factors } = aiResult;
 
     const result = await pool.query(
@@ -170,16 +190,10 @@ router.patch('/:id', requireRole('provost'), async (req, res) => {
       return res.status(400).json({ error: 'Application has already been processed' });
     }
 
-    const result = await pool.query(
-      `UPDATE applications SET status = $1, feedback = $2, updated_at = NOW() WHERE id = $3 RETURNING *`,
-      [status, feedback || null, id]
-    );
-
-    // If approved, assign a seat
     if (status === 'approved') {
       const application = app.rows[0];
-      
-      // Find an available seat (prefer the requested room, fallback to any in the hall)
+
+      // Find an available seat to RESERVE (not assign yet)
       let seatQuery;
       if (application.preferred_room_id) {
         seatQuery = await pool.query(
@@ -198,25 +212,178 @@ router.patch('/:id', requireRole('provost'), async (req, res) => {
         );
       }
 
-      if (seatQuery.rows.length > 0) {
-        const seatId = seatQuery.rows[0].id;
-        
-        // Mark seat as occupied
-        await pool.query(`UPDATE seats SET status = 'occupied' WHERE id = $1`, [seatId]);
-
-        // Create resident record
-        await pool.query(
-          `INSERT INTO residents (student_id, seat_id, hall_id, dining_days)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (student_id) DO UPDATE SET seat_id = $2, hall_id = $3, assigned_at = NOW()`,
-          [application.student_id, seatId, application.hall_id, ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday']]
-        );
+      if (seatQuery.rows.length === 0) {
+        return res.status(400).json({ error: 'No available seats in this hall. Cannot approve.' });
       }
+
+      const seatId = seatQuery.rows[0].id;
+
+      // Reserve the seat (NOT occupy yet)
+      await pool.query(`UPDATE seats SET status = 'reserved' WHERE id = $1`, [seatId]);
+
+      // Set 24-hour payment deadline
+      const result = await pool.query(
+        `UPDATE applications 
+         SET status = 'approved', feedback = $1, payment_status = 'pending',
+             payment_deadline = NOW() + INTERVAL '24 hours', reserved_seat_id = $2,
+             updated_at = NOW()
+         WHERE id = $3 RETURNING *`,
+        [feedback || null, seatId, id]
+      );
+
+      return res.json({ application: result.rows[0] });
     }
+
+    // Denied
+    const result = await pool.query(
+      `UPDATE applications SET status = 'denied', feedback = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+      [feedback || null, id]
+    );
 
     res.json({ application: result.rows[0] });
   } catch (err) {
     console.error('Update application error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/applications/:id/pay — student completes dummy payment
+router.post('/:id/pay', requireAuth, async (req, res) => {
+  try {
+    if (req.session.user.role !== 'student') {
+      return res.status(403).json({ error: 'Only students can make payments' });
+    }
+
+    const { id } = req.params;
+
+    const app = await pool.query(
+      `SELECT * FROM applications WHERE id = $1 AND student_id = $2`,
+      [id, req.session.user.id]
+    );
+
+    if (app.rows.length === 0) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+
+    const application = app.rows[0];
+
+    if (application.status !== 'approved' || application.payment_status !== 'pending') {
+      return res.status(400).json({ error: 'This application is not awaiting payment' });
+    }
+
+    // Check if payment deadline has passed
+    if (new Date(application.payment_deadline) < new Date()) {
+      // Expire it
+      await pool.query(
+        `UPDATE applications SET status = 'expired', payment_status = 'expired', updated_at = NOW() WHERE id = $1`,
+        [id]
+      );
+      if (application.reserved_seat_id) {
+        await pool.query(`UPDATE seats SET status = 'available' WHERE id = $1`, [application.reserved_seat_id]);
+      }
+      return res.status(400).json({ error: 'Payment deadline has expired. Your reserved seat has been released.' });
+    }
+
+    // Process payment (dummy — just mark as paid)
+    // Mark seat as occupied
+    if (application.reserved_seat_id) {
+      await pool.query(`UPDATE seats SET status = 'occupied' WHERE id = $1`, [application.reserved_seat_id]);
+    }
+
+    // Create resident record
+    await pool.query(
+      `INSERT INTO residents (student_id, seat_id, hall_id, dining_days)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (student_id) DO UPDATE SET seat_id = $2, hall_id = $3, assigned_at = NOW()`,
+      [application.student_id, application.reserved_seat_id, application.hall_id,
+       ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday']]
+    );
+
+    // Update application
+    const result = await pool.query(
+      `UPDATE applications SET payment_status = 'paid', paid_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [id]
+    );
+
+    console.log(`💰 Payment completed for application ${id}, seat ${application.reserved_seat_id} assigned`);
+
+    res.json({ application: result.rows[0], message: 'Payment successful! Seat has been assigned.' });
+  } catch (err) {
+    console.error('Payment error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/applications/:id/cancel — student cancels their application
+router.post('/:id/cancel', requireAuth, async (req, res) => {
+  try {
+    if (req.session.user.role !== 'student') {
+      return res.status(403).json({ error: 'Only students can cancel applications' });
+    }
+
+    const { id } = req.params;
+
+    const app = await pool.query(
+      `SELECT * FROM applications WHERE id = $1 AND student_id = $2`,
+      [id, req.session.user.id]
+    );
+
+    if (app.rows.length === 0) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+
+    const application = app.rows[0];
+
+    // Can only cancel pending or approved-but-unpaid
+    if (application.status === 'pending') {
+      await pool.query(
+        `UPDATE applications SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+        [id]
+      );
+    } else if (application.status === 'approved' && application.payment_status === 'pending') {
+      // Release the reserved seat
+      if (application.reserved_seat_id) {
+        await pool.query(`UPDATE seats SET status = 'available' WHERE id = $1`, [application.reserved_seat_id]);
+      }
+      await pool.query(
+        `UPDATE applications SET status = 'cancelled', payment_status = 'expired', updated_at = NOW() WHERE id = $1`,
+        [id]
+      );
+    } else {
+      return res.status(400).json({ error: 'This application cannot be cancelled' });
+    }
+
+    const result = await pool.query('SELECT * FROM applications WHERE id = $1', [id]);
+    console.log(`🚫 Application ${id} cancelled by student`);
+
+    res.json({ application: result.rows[0], message: 'Application cancelled successfully' });
+  } catch (err) {
+    console.error('Cancel error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/applications/resident-check — check if student is a resident
+router.get('/resident-check', requireAuth, async (req, res) => {
+  try {
+    if (req.session.user.role !== 'student') {
+      return res.json({ isResident: false });
+    }
+    const result = await pool.query(
+      `SELECT r.id, rm.room_number, s.seat_number, h.name AS hall_name
+       FROM residents r
+       JOIN seats s ON r.seat_id = s.id
+       JOIN rooms rm ON s.room_id = rm.id
+       JOIN halls h ON r.hall_id = h.id
+       WHERE r.student_id = $1`,
+      [req.session.user.id]
+    );
+    if (result.rows.length > 0) {
+      return res.json({ isResident: true, resident: result.rows[0] });
+    }
+    res.json({ isResident: false });
+  } catch (err) {
+    console.error('Resident check error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
