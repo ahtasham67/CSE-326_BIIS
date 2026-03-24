@@ -201,7 +201,7 @@ export default function MyApplications() {
                   </div>
                 )}
 
-                {(app.ai_score || app.ai_recommendation) && (
+                {/* {(app.ai_score || app.ai_recommendation) && (
                   <div className="ai-section">
                     <div className="ai-label">🤖 AI Priority Analysis</div>
                     {app.ai_score && (
@@ -242,7 +242,7 @@ export default function MyApplications() {
                       return app.ai_summary ? <p style={{ fontSize: '0.85rem', color: '#555', fontStyle: 'italic' }}>{app.ai_summary}</p> : null;
                     })()}
                   </div>
-                )}
+                )} */}
 
                 {app.feedback && (
                   <div className="feedback-section">
