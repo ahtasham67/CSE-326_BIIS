@@ -54,6 +54,8 @@ const schema = `
     status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'denied')),
     ai_summary TEXT,
     ai_recommendation VARCHAR(20) CHECK (ai_recommendation IN ('strong', 'moderate', 'weak')),
+    ai_score INT CHECK (ai_score >= 1 AND ai_score <= 10),
+    ai_reasons JSONB DEFAULT '[]',
     feedback TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()

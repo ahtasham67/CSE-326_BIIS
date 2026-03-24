@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+.env
+.git
+.gitignore
+.DS_Store
+client/node_modules
+server/node_modules
+server/uploads/*
+!server/uploads/.gitkeep
+*.md
+.gemini

@@ -66,13 +66,14 @@ router.post('/', requireAuth, upload.single('document'), async (req, res) => {
     };
 
     // Generate AI summary and recommendation
-    const { summary, recommendation } = await analyzeApplication(studentData);
+    const aiResult = await analyzeApplication(studentData);
+    const { summary, recommendation, score, factors } = aiResult;
 
     const result = await pool.query(
-      `INSERT INTO applications (student_id, hall_id, preferred_room_id, reason, document_url, ai_summary, ai_recommendation)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO applications (student_id, hall_id, preferred_room_id, reason, document_url, ai_summary, ai_recommendation, ai_score, ai_reasons)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [req.session.user.id, hall_id, preferred_room_id || null, reason, document_url, summary, recommendation]
+      [req.session.user.id, hall_id, preferred_room_id || null, reason, document_url, summary, recommendation, score || null, JSON.stringify(factors || [])]
     );
 
     res.status(201).json({ application: result.rows[0] });

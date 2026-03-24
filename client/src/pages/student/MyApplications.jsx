@@ -86,7 +86,7 @@ export default function MyApplications() {
                   </p>
                 )}
 
-                {app.ai_recommendation && (
+                {/* {app.ai_recommendation && (
                   <div className="ai-section">
                     <div className="ai-label">🤖 AI Analysis</div>
                     <p className="ai-summary">{app.ai_summary}</p>
@@ -94,7 +94,7 @@ export default function MyApplications() {
                       {app.ai_recommendation.toUpperCase()} recommendation
                     </span>
                   </div>
-                )}
+                )} */}
 
                 {app.feedback && (
                   <div className="feedback-section">

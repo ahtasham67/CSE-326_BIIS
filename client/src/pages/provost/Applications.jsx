@@ -115,6 +115,17 @@ export default function Applications() {
                 </p>
               </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                {app.ai_score && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '4px',
+                    padding: '3px 10px', fontWeight: 700, fontSize: '0.85rem',
+                    background: app.ai_score >= 7 ? '#E8F5E9' : app.ai_score >= 4 ? '#FFF3E0' : '#FFEBEE',
+                    color: app.ai_score >= 7 ? '#2E7D32' : app.ai_score >= 4 ? '#E65100' : '#C62828',
+                    border: `1px solid ${app.ai_score >= 7 ? '#A5D6A7' : app.ai_score >= 4 ? '#FFCC80' : '#EF9A9A'}`
+                  }}>
+                    ⭐ {app.ai_score}/10
+                  </span>
+                )}
                 {app.ai_recommendation && (
                   <span className={`badge badge-${app.ai_recommendation}`}>
                     {app.ai_recommendation.toUpperCase()}
@@ -134,10 +145,79 @@ export default function Applications() {
               </p>
             )}
 
-            {app.ai_summary && (
-              <div className="ai-section">
-                <div className="ai-label">🤖 AI Summary & Recommendation</div>
-                <p className="ai-summary">{app.ai_summary}</p>
+            {/* AI Score & Factor Breakdown */}
+            {(app.ai_score || app.ai_summary) && (
+              <div className="ai-section" style={{ marginTop: '12px' }}>
+                <div className="ai-label">🤖 AI Priority Analysis</div>
+
+                {app.ai_score && (
+                  <div style={{ margin: '8px 0 12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: 700, fontSize: '1.1rem', color: app.ai_score >= 7 ? '#2E7D32' : app.ai_score >= 4 ? '#E65100' : '#C62828' }}>
+                        Priority: {app.ai_score}/10
+                      </span>
+                    </div>
+                    {/* Score bar */}
+                    <div style={{ height: '8px', background: '#eee', width: '100%', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%', width: `${app.ai_score * 10}%`, borderRadius: '4px',
+                        background: app.ai_score >= 7 ? '#4CAF50' : app.ai_score >= 4 ? '#FF9800' : '#F44336',
+                        transition: 'width 0.3s'
+                      }}></div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Factor breakdown */}
+                {(() => {
+                  let factors = app.ai_reasons;
+                  if (typeof factors === 'string') {
+                    try { factors = JSON.parse(factors); } catch { factors = []; }
+                  }
+                  if (Array.isArray(factors) && factors.length > 0) {
+                    return (
+                      <div style={{ marginTop: '8px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                          <thead>
+                            <tr style={{ background: '#f5f0e5' }}>
+                              <th style={{ padding: '6px 10px', textAlign: 'left', borderBottom: '1px solid #ddd', fontWeight: 700 }}>Factor</th>
+                              <th style={{ padding: '6px 10px', textAlign: 'left', borderBottom: '1px solid #ddd', fontWeight: 700 }}>Assessment</th>
+                              <th style={{ padding: '6px 10px', textAlign: 'center', borderBottom: '1px solid #ddd', fontWeight: 700, width: '70px' }}>Impact</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {factors.map((f, i) => (
+                              <tr key={i}>
+                                <td style={{ padding: '6px 10px', borderBottom: '1px solid #eee', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                  {f.factor}
+                                </td>
+                                <td style={{ padding: '6px 10px', borderBottom: '1px solid #eee', color: '#555' }}>
+                                  {f.detail}
+                                  {f.points !== undefined && <span style={{ marginLeft: '6px', fontWeight: 700, color: '#8B0000' }}>({f.points} pts)</span>}
+                                </td>
+                                <td style={{ padding: '6px 10px', borderBottom: '1px solid #eee', textAlign: 'center' }}>
+                                  <span style={{
+                                    padding: '1px 8px', fontSize: '0.72rem', fontWeight: 700,
+                                    background: f.impact === 'high' ? '#FFEBEE' : f.impact === 'medium' ? '#FFF8E1' : '#F5F5F5',
+                                    color: f.impact === 'high' ? '#C62828' : f.impact === 'medium' ? '#E65100' : '#777',
+                                    border: `1px solid ${f.impact === 'high' ? '#EF9A9A' : f.impact === 'medium' ? '#FFE082' : '#ddd'}`
+                                  }}>
+                                    {(f.impact || 'low').toUpperCase()}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {app.ai_summary && (
+                  <p style={{ marginTop: '8px', fontSize: '0.85rem', color: '#555', fontStyle: 'italic' }}>{app.ai_summary}</p>
+                )}
               </div>
             )}
 
