@@ -66,9 +66,11 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// In production, serve the React build
-if (process.env.NODE_ENV === 'production') {
-  const clientBuild = path.join(__dirname, '../../client/dist');
+// Serve the React build if it exists (production / Docker deployment)
+const clientBuild = path.join(__dirname, '../../client/dist');
+const fs = require('fs');
+if (fs.existsSync(clientBuild)) {
+  console.log('📦 Serving React build from', clientBuild);
   app.use(express.static(clientBuild));
   
   // SPA fallback — serve index.html for all non-API routes
