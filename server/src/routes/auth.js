@@ -7,7 +7,7 @@ const router = express.Router();
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, role, student_id, department, year } = req.body;
+    const { name, email, password, role, student_id, department, year, hall_id } = req.body;
 
     if (!name || !email || !password || !role) {
       return res.status(400).json({ error: 'Name, email, password, and role are required' });
@@ -15,6 +15,11 @@ router.post('/register', async (req, res) => {
 
     if (!['student', 'provost'].includes(role)) {
       return res.status(400).json({ error: 'Role must be student or provost' });
+    }
+
+    // Students must select a hall
+    if (role === 'student' && !hall_id) {
+      return res.status(400).json({ error: 'Students must select a hall' });
     }
 
     // Check if email already exists
@@ -26,9 +31,9 @@ router.post('/register', async (req, res) => {
     const password_hash = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
-      `INSERT INTO users (name, email, password_hash, role, student_id, department, year)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, name, email, role, student_id, department, year`,
-      [name, email, password_hash, role, student_id || null, department || null, year || null]
+      `INSERT INTO users (name, email, password_hash, role, student_id, department, year, hall_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name, email, role, student_id, department, year, hall_id`,
+      [name, email, password_hash, role, student_id || null, department || null, year || null, role === 'student' ? hall_id : null]
     );
 
     const user = result.rows[0];
@@ -41,7 +46,8 @@ router.post('/register', async (req, res) => {
       role: user.role,
       student_id: user.student_id,
       department: user.department,
-      year: user.year
+      year: user.year,
+      hall_id: user.hall_id
     };
 
     res.status(201).json({ user: req.session.user });
@@ -61,7 +67,7 @@ router.post('/login', async (req, res) => {
     }
 
     const result = await pool.query(
-      'SELECT id, name, email, password_hash, role, student_id, department, year FROM users WHERE email = $1',
+      'SELECT id, name, email, password_hash, role, student_id, department, year, hall_id FROM users WHERE email = $1',
       [email]
     );
 
@@ -84,7 +90,8 @@ router.post('/login', async (req, res) => {
       role: user.role,
       student_id: user.student_id,
       department: user.department,
-      year: user.year
+      year: user.year,
+      hall_id: user.hall_id
     };
 
     res.json({ user: req.session.user });

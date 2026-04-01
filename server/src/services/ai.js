@@ -147,8 +147,8 @@ Rules:
 
     const result = await model.generateContent(prompt);
     const text = result.response.text();
-    //print text
-    console.log(text);
+    //print text in terminal
+    
     // Parse JSON from response (handle possible markdown wrapping)
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);

@@ -83,7 +83,7 @@ router.patch('/:id', requireRole('provost'), async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Resident not found' });
     }
-
+    
     res.json({ resident: result.rows[0] });
   } catch (err) {
     console.error('Update resident error:', err);

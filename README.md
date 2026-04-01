@@ -3,6 +3,9 @@
 Hall Seat Management System for university students and provosts. Built with **React + Express + PostgreSQL**.
 
 ---
+# Deployed on Render
+
+https://cse-326-biis.onrender.com
 
 ## Features
 
@@ -196,18 +199,6 @@ CSE-326_BIIS/
 | PATCH | `/api/seat-changes/:id` | Approve/deny change | Provost |
 | GET | `/api/residents` | List hall residents | Provost |
 
----
-
-## Deployment on Render
-
-1. Push code to GitHub
-2. Create a **Web Service** on [Render](https://render.com)
-3. Configure:
-   - **Runtime**: Docker
-   - **Dockerfile Path**: `./Dockerfile`
-4. Set environment variables:
-   - `DATABASE_URL`, `SESSION_SECRET`, `NODE_ENV=production`, `GEMINI_API_KEY` (optional)
-5. Deploy — migrations run automatically on startup
 
 ---
 

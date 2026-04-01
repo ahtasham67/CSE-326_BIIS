@@ -1,16 +1,29 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import api from '../api';
 
 export default function Register() {
   const [form, setForm] = useState({
     name: '', email: '', password: '', role: 'student',
-    student_id: '', department: '', year: ''
+    student_id: '', department: '', year: '', hall_id: ''
   });
+  const [halls, setHalls] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    loadHalls();
+  }, []);
+
+  async function loadHalls() {
+    try {
+      const res = await api.get('/seats/halls');
+      setHalls(res.data.halls);
+    } catch (err) { /* halls list may fail before login, ignore */ }
+  }
 
   function updateField(field, value) {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -23,7 +36,8 @@ export default function Register() {
     try {
       await register({
         ...form,
-        year: form.year ? parseInt(form.year) : null
+        year: form.year ? parseInt(form.year) : null,
+        hall_id: form.hall_id ? parseInt(form.hall_id) : null
       });
       navigate('/');
     } catch (err) {
@@ -100,7 +114,6 @@ export default function Register() {
 
                   <div className="auth-card form-row">
                     <label htmlFor="department">Department :</label>
-                    {/* <input id="department" type="text" value={form.department} */}
                     <select id="department" value={form.department} onChange={e => updateField('department', e.target.value)}>
                       <option value="">Select</option>
                       <option value="CSE">CSE</option>
@@ -124,6 +137,16 @@ export default function Register() {
                       <option value="5">Level 5</option>
                     </select>
                   </div>
+
+                  <div className="auth-card form-row">
+                    <label htmlFor="hall">Hall :</label>
+                    <select id="hall" value={form.hall_id} onChange={e => updateField('hall_id', e.target.value)} required>
+                      <option value="">Select Hall</option>
+                      {halls.map(h => (
+                        <option key={h.id} value={h.id}>{h.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 </>
               )}
 
@@ -133,7 +156,7 @@ export default function Register() {
                 </button>
                 <button type="reset" className="btn" onClick={() => setForm({
                   name: '', email: '', password: '', role: 'student',
-                  student_id: '', department: '', year: ''
+                  student_id: '', department: '', year: '', hall_id: ''
                 })}>
                   Reset
                 </button>

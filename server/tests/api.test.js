@@ -111,6 +111,16 @@ async function testAuth() {
     'Login — provost success', `status=${r.status}, role=${r.data.user?.role}`);
   provostCookie = r.cookie;
 
+  // Get provost's hall (so tests use the correct hall)
+  r = await req('GET', '/api/seats/halls', null, provostCookie);
+  if (r.data.halls?.length > 0) {
+    // Provost's applications endpoint filters by their hall, so we fetch that
+    const appsRes = await req('GET', '/api/applications', null, provostCookie);
+    // Use halls list and pick the first one matching provost's managed halls
+    // Provost1 manages the first hall in seed data order
+    testHallId = r.data.halls[0].id;
+  }
+
   // Login — nonexistent user
   r = await req('POST', '/api/auth/login', { email: 'noone@x.com', password: 'x' });
   log(r.status === 401 ? 'PASS' : 'FAIL',
@@ -139,7 +149,8 @@ async function testSeats() {
   r = await req('GET', '/api/seats/halls', null, studentCookie);
   log(r.status === 200 && Array.isArray(r.data.halls) ? 'PASS' : 'FAIL',
     'GET /seats/halls — returns halls', `count=${r.data.halls?.length}`);
-  if (r.data.halls?.length > 0) testHallId = r.data.halls[0].id;
+  // testHallId already set from provost login — don't overwrite
+  if (!testHallId && r.data.halls?.length > 0) testHallId = r.data.halls[0].id;
 
   // Filter by hall
   if (testHallId) {
