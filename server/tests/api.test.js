@@ -64,22 +64,38 @@ async function testHealth() {
 async function testAuth() {
   console.log('\n📋 Authentication');
 
+  // First get halls (public endpoint) so we can register with hall_id
+  let r = await req('GET', '/api/seats/halls');
+  log(r.status === 200 && Array.isArray(r.data.halls) ? 'PASS' : 'FAIL',
+    'GET /seats/halls — public (for registration)', `count=${r.data.halls?.length}`);
+  if (r.data.halls?.length > 0) testHallId = r.data.halls[0].id;
+
   // Register — missing fields
-  let r = await req('POST', '/api/auth/register', { name: 'Test' });
+  r = await req('POST', '/api/auth/register', { name: 'Test' });
   log(r.status === 400 ? 'PASS' : 'FAIL',
     'Register — missing fields returns 400', `status=${r.status}`);
 
-  // Register — new student
+  // Register — student without hall returns 400
+  r = await req('POST', '/api/auth/register', {
+    name: 'No Hall', email: 'nohall@test.edu', password: 'test123',
+    role: 'student', student_id: '9999000', department: 'CSE', year: 2
+  });
+  log(r.status === 400 ? 'PASS' : 'FAIL',
+    'Register — student without hall returns 400', `status=${r.status}`);
+
+  // Register — new student with hall
   r = await req('POST', '/api/auth/register', {
     name: 'Test Student', email: testStudentEmail, password: 'test123',
-    role: 'student', student_id: '9999001', department: 'CSE', year: 2
+    role: 'student', student_id: '9999001', department: 'CSE', year: 2,
+    hall_id: testHallId
   });
-  log(r.status === 201 && r.data.user ? 'PASS' : 'FAIL',
-    'Register — new student', `status=${r.status}, id=${r.data.user?.id}`);
+  log(r.status === 201 && r.data.user?.hall_id === testHallId ? 'PASS' : 'FAIL',
+    'Register — new student with hall', `status=${r.status}, hall_id=${r.data.user?.hall_id}`);
 
   // Register — duplicate email
   r = await req('POST', '/api/auth/register', {
-    name: 'Dup', email: testStudentEmail, password: 'test123', role: 'student'
+    name: 'Dup', email: testStudentEmail, password: 'test123',
+    role: 'student', hall_id: testHallId
   });
   log(r.status === 409 ? 'PASS' : 'FAIL',
     'Register — duplicate email returns 409', `status=${r.status}`);
@@ -89,10 +105,10 @@ async function testAuth() {
   log(r.status === 401 ? 'PASS' : 'FAIL',
     'Login — wrong password returns 401', `status=${r.status}`);
 
-  // Login — student
+  // Login — student (hall_id should be in session)
   r = await req('POST', '/api/auth/login', { email: testStudentEmail, password: 'test123' });
-  log(r.status === 200 && r.data.user ? 'PASS' : 'FAIL',
-    'Login — student success', `status=${r.status}, role=${r.data.user?.role}`);
+  log(r.status === 200 && r.data.user?.hall_id === testHallId ? 'PASS' : 'FAIL',
+    'Login — student has hall_id in session', `status=${r.status}, hall_id=${r.data.user?.hall_id}`);
   studentCookie = r.cookie;
 
   // Me — authenticated
@@ -111,16 +127,6 @@ async function testAuth() {
     'Login — provost success', `status=${r.status}, role=${r.data.user?.role}`);
   provostCookie = r.cookie;
 
-  // Get provost's hall (so tests use the correct hall)
-  r = await req('GET', '/api/seats/halls', null, provostCookie);
-  if (r.data.halls?.length > 0) {
-    // Provost's applications endpoint filters by their hall, so we fetch that
-    const appsRes = await req('GET', '/api/applications', null, provostCookie);
-    // Use halls list and pick the first one matching provost's managed halls
-    // Provost1 manages the first hall in seed data order
-    testHallId = r.data.halls[0].id;
-  }
-
   // Login — nonexistent user
   r = await req('POST', '/api/auth/login', { email: 'noone@x.com', password: 'x' });
   log(r.status === 401 ? 'PASS' : 'FAIL',
@@ -135,29 +141,26 @@ async function testSeats() {
   log(r.status === 401 ? 'PASS' : 'FAIL',
     'GET /seats — unauthenticated returns 401', `status=${r.status}`);
 
-  // List seats
+  // List seats — student sees only their hall's rooms
   r = await req('GET', '/api/seats', null, studentCookie);
-  log(r.status === 200 && Array.isArray(r.data.rooms) ? 'PASS' : 'FAIL',
-    'GET /seats — returns rooms array', `count=${r.data.rooms?.length}`);
+  const allSameHall = r.data.rooms?.every(rm => rm.hall_id === testHallId);
+  log(r.status === 200 && Array.isArray(r.data.rooms) && allSameHall ? 'PASS' : 'FAIL',
+    'GET /seats — student sees only their hall rooms', `count=${r.data.rooms?.length}, allSameHall=${allSameHall}`);
 
-  // Stats
+  // Stats — student sees only their hall
   r = await req('GET', '/api/seats/stats', null, studentCookie);
-  log(r.status === 200 && r.data.stats ? 'PASS' : 'FAIL',
-    'GET /seats/stats — returns stats', `total=${r.data.stats?.total_seats}`);
+  log(r.status === 200 && Array.isArray(r.data.stats) ? 'PASS' : 'FAIL',
+    'GET /seats/stats — returns stats', `halls=${r.data.stats?.length}`);
 
-  // Halls
-  r = await req('GET', '/api/seats/halls', null, studentCookie);
+  // Halls — public endpoint, returns all halls
+  r = await req('GET', '/api/seats/halls');
   log(r.status === 200 && Array.isArray(r.data.halls) ? 'PASS' : 'FAIL',
-    'GET /seats/halls — returns halls', `count=${r.data.halls?.length}`);
-  // testHallId already set from provost login — don't overwrite
-  if (!testHallId && r.data.halls?.length > 0) testHallId = r.data.halls[0].id;
+    'GET /seats/halls — public returns all halls', `count=${r.data.halls?.length}`);
 
-  // Filter by hall
-  if (testHallId) {
-    r = await req('GET', `/api/seats?hall_id=${testHallId}`, null, studentCookie);
-    log(r.status === 200 ? 'PASS' : 'FAIL',
-      'GET /seats?hall_id — filter by hall', `rooms=${r.data.rooms?.length}`);
-  }
+  // Filter by floor
+  r = await req('GET', '/api/seats?floor=1', null, studentCookie);
+  log(r.status === 200 ? 'PASS' : 'FAIL',
+    'GET /seats?floor=1 — filter by floor', `rooms=${r.data.rooms?.length}`);
 }
 
 async function testApplications() {
@@ -170,28 +173,27 @@ async function testApplications() {
   log(r.status === 200 && r.data.isResident === false ? 'PASS' : 'FAIL',
     'Resident check — test student is not resident', `isResident=${r.data.isResident}`);
 
-  // Submit — missing fields
-  r = await req('POST', '/api/applications', { hall_id: testHallId }, studentCookie);
+  // Submit — missing reason returns 400 (hall auto from session)
+  r = await req('POST', '/api/applications', {}, studentCookie);
   log(r.status === 400 ? 'PASS' : 'FAIL',
     'Submit — missing reason returns 400', `status=${r.status}`);
 
   // Submit — unauthenticated
-  r = await req('POST', '/api/applications', { hall_id: testHallId, reason: 'test' });
+  r = await req('POST', '/api/applications', { reason: 'test' });
   log(r.status === 401 ? 'PASS' : 'FAIL',
     'Submit — unauthenticated returns 401', `status=${r.status}`);
 
-  // Submit — valid application
+  // Submit — valid application (no hall_id needed, auto from session)
   r = await req('POST', '/api/applications', {
-    hall_id: testHallId,
     reason: 'I am from a remote district, 300km away. My family income is very low and I cannot afford housing near university. Financial hardship, scholarship student.'
   }, studentCookie);
   log(r.status === 201 && r.data.application ? 'PASS' : 'FAIL',
-    'Submit — valid application', `id=${r.data.application?.id}, score=${r.data.application?.ai_score}`);
+    'Submit — valid application (hall auto from session)', `id=${r.data.application?.id}, score=${r.data.application?.ai_score}`);
   testApplicationId = r.data.application?.id;
 
   // Submit — duplicate pending
   r = await req('POST', '/api/applications', {
-    hall_id: testHallId, reason: 'duplicate test'
+    reason: 'duplicate test'
   }, studentCookie);
   log(r.status === 409 ? 'PASS' : 'FAIL',
     'Submit — duplicate pending returns 409', `status=${r.status}`);
@@ -213,7 +215,7 @@ async function testApplications() {
 
   // Submit — provost cannot submit
   r = await req('POST', '/api/applications', {
-    hall_id: testHallId, reason: 'provost trying'
+    reason: 'provost trying'
   }, provostCookie);
   log(r.status === 403 ? 'PASS' : 'FAIL',
     'Submit — provost blocked returns 403', `status=${r.status}`);
@@ -274,7 +276,7 @@ async function testApprovalAndPayment() {
 
   // Submit — resident blocked
   r = await req('POST', '/api/applications', {
-    hall_id: testHallId, reason: 'resident trying to apply again'
+    reason: 'resident trying to apply again'
   }, studentCookie);
   log(r.status === 409 ? 'PASS' : 'FAIL',
     'Submit — resident blocked from applying', `error=${r.data.error?.substring(0, 40)}`);
@@ -283,17 +285,18 @@ async function testApprovalAndPayment() {
 async function testCancellation() {
   console.log('\n📋 Cancellation');
 
-  // Create a new student for cancel test
+  // Create a new student for cancel test (with hall_id)
   const cancelEmail = `cancel_${Date.now()}@test.edu`;
   let r = await req('POST', '/api/auth/register', {
     name: 'Cancel Test', email: cancelEmail, password: 'test123',
-    role: 'student', student_id: '9999002', department: 'EEE', year: 1
+    role: 'student', student_id: '9999002', department: 'EEE', year: 1,
+    hall_id: testHallId
   });
   const cancelCookie = r.cookie;
 
-  // Submit application
+  // Submit application (no hall_id in body)
   r = await req('POST', '/api/applications', {
-    hall_id: testHallId, reason: 'Testing cancellation flow'
+    reason: 'Testing cancellation flow'
   }, cancelCookie);
   const cancelAppId = r.data.application?.id;
   log(r.status === 201 ? 'PASS' : 'FAIL',
@@ -368,9 +371,17 @@ async function testLogout() {
 
 async function cleanup() {
   console.log('\n🧹 Cleanup');
-  // Delete test users
   const pool = require('../src/db');
   try {
+    // Release seats that were assigned to test users
+    await pool.query(`
+      UPDATE seats SET status = 'available' 
+      WHERE id IN (
+        SELECT seat_id FROM residents WHERE student_id IN (
+          SELECT id FROM users WHERE email LIKE '%@test.edu'
+        )
+      )
+    `);
     await pool.query(`DELETE FROM residents WHERE student_id IN (SELECT id FROM users WHERE email LIKE '%@test.edu')`);
     await pool.query(`DELETE FROM applications WHERE student_id IN (SELECT id FROM users WHERE email LIKE '%@test.edu')`);
     await pool.query(`DELETE FROM users WHERE email LIKE '%@test.edu'`);
